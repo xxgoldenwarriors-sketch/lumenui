@@ -8,7 +8,7 @@
 	Lumen UI  -  a clean, quiet Roblox interface library
 	Client-sided. Works in a LocalScript / ModuleScript or via loadstring.
 
-	local Lumen = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_NAME/Lumen/main/Lumen.lua"))()
+	local Lumen = loadstring(game:HttpGet("https://raw.githubusercontent.com/xxgoldenwarriors-sketch/Lumen/main/Lumen.lua"))()
 	local Window = Lumen:CreateWindow({ Title = "My Hub", Subtitle = "made with Lumen" })
 	local Tab = Window:Tab({ Title = "Main", Icon = "home" })
 	Tab:Toggle({ Title = "Hello", Callback = function(v) print(v) end })
