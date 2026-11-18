@@ -33,7 +33,8 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
-local CoreGui = game:GetService("CoreGui")
+-- In a normal LocalScript this can come back nil (no permission), so keep it optional.
+local CoreGui = (function() local ok, svc = pcall(game.GetService, game, "CoreGui") return ok and svc or nil end)()
 local GuiService = game:GetService("GuiService")
 local RobloxFont = Font
 
@@ -299,9 +300,12 @@ end
 local function GetGuiParent()
 	local ok, hui = pcall(function() return gethui and gethui() end)
 	if ok and hui then return hui end
-	local canCore = pcall(function()
+	-- CoreGui only counts if we can really parent into it and read it back
+	-- (parenting to a nil CoreGui would "succeed" and leave the UI nowhere).
+	local canCore = CoreGui ~= nil and pcall(function()
 		local probe = Instance.new("ScreenGui")
 		probe.Parent = CoreGui
+		assert(probe.Parent == CoreGui and CoreGui:FindFirstChild(probe.Name))
 		probe:Destroy()
 	end)
 	if canCore then return CoreGui end
@@ -631,7 +635,7 @@ function Elements:Slider(o)
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.fromOffset(14, 14),
 		Theme = { BackgroundColor3 = "Knob" }, ZIndex = 2, Parent = track,
 	})
-	Corner(knob, 6)
+	New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
 	Stroke(knob, "Accent", 2)
 
 	local function format(v) return string.format("%." .. dec .. "f", v) .. suffix end
@@ -1102,7 +1106,8 @@ function Elements:ColorPicker(o)
 	sv.InputBegan:Connect(function(i) if IsClick(i) then dragSV = true end end)
 	hue.InputBegan:Connect(function(i) if IsClick(i) then dragHue = true end end)
 	local function updateDrag(pos)
-		pos = Vector2.new(pos.X, pos.Y) + GuiService:GetGuiInset()
+		-- InputObject.Position and AbsolutePosition share the same origin (below the top bar), so no inset math
+		pos = Vector2.new(pos.X, pos.Y)
 		if dragSV then
 			s = math.clamp((pos.X - sv.AbsolutePosition.X) / sv.AbsoluteSize.X, 0, 1)
 			v = 1 - math.clamp((pos.Y - sv.AbsolutePosition.Y) / sv.AbsoluteSize.Y, 0, 1)
@@ -1252,7 +1257,32 @@ function Lumen:CreateWindow(o)
 		baseScale = math.clamp(math.min(1, (vp.X - 24) / size.X.Offset, (vp.Y - 24) / size.Y.Offset), 0.45, 1)
 		applyScale()
 	end
-	if workspace.CurrentCamera then Connect(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), fit) end
+	-- Roblox can swap CurrentCamera when the game starts, so follow camera changes too.
+	local camConn
+	local function hookCamera()
+		if camConn then camConn:Disconnect() end
+		local cam = workspace.CurrentCamera
+		if cam then camConn = Connect(cam:GetPropertyChangedSignal("ViewportSize"), fit) end
+		fit()
+	end
+	Connect(workspace:GetPropertyChangedSignal("CurrentCamera"), hookCamera)
+
+	-- Tween the scale through a NumberValue, then force the final value:
+	-- a tween can be dropped (e.g. while the game is still starting) and must not leave the window at 97%.
+	local function animateScale(from, to, time, done)
+		animScale = from
+		applyScale()
+		local proxy = Instance.new("NumberValue")
+		proxy.Value = from
+		proxy.Changed:Connect(function(x) animScale = x applyScale() end)
+		Tween(proxy, { Value = to }, time)
+		task.delay(time + 0.05, function()
+			proxy:Destroy()
+			animScale = to
+			applyScale()
+			if done then done() end
+		end)
+	end
 
 	-- soft drop shadow (stacked layers, no image needed)
 	local shadow = New("Frame", { Name = "Shadow", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = root })
@@ -1466,10 +1496,15 @@ function Lumen:CreateWindow(o)
 		if not tab then return end
 		local q = searchBox.Text:lower()
 		local sectionHits = {}
+		-- a section whose own name matches shows everything inside it
+		local sectionMatch = {}
+		for _, s in ipairs(tab.Sections) do
+			if q ~= "" and s.Title:lower():find(q, 1, true) then sectionMatch[s.Frame] = true end
+		end
 		for _, item in ipairs(tab.Searchables) do
 			if item.Frame.Parent then
 				local hay = (item.Title.Text .. " " .. item.Desc.Text):lower()
-				local hit = q == "" or hay:find(q, 1, true) ~= nil
+				local hit = q == "" or hay:find(q, 1, true) ~= nil or (item.Section and sectionMatch[item.Section]) == true
 				item.Frame.Visible = hit
 				if hit and item.Section then sectionHits[item.Section] = true end
 			end
@@ -1524,20 +1559,9 @@ function Lumen:CreateWindow(o)
 		self.Visible = v
 		if v then
 			gui.Enabled = true
-			animScale = 0.97
-			applyScale()
-			local proxy = Instance.new("NumberValue")
-			proxy.Value = 0.97
-			proxy.Changed:Connect(function(x) animScale = x applyScale() end)
-			Tween(proxy, { Value = 1 }, 0.2)
-			task.delay(0.25, function() proxy:Destroy() end)
+			animateScale(0.97, 1, 0.2)
 		else
-			local proxy = Instance.new("NumberValue")
-			proxy.Value = animScale
-			proxy.Changed:Connect(function(x) animScale = x applyScale() end)
-			Tween(proxy, { Value = 0.97 }, 0.15)
-			task.delay(0.15, function()
-				proxy:Destroy()
+			animateScale(animScale, 0.97, 0.15, function()
 				if not self.Visible then gui.Enabled = false end
 			end)
 		end
@@ -1586,12 +1610,8 @@ function Lumen:CreateWindow(o)
 
 	-- intro animation
 	task.defer(function()
-		fit()
-		local proxy = Instance.new("NumberValue")
-		proxy.Value = 0.97
-		proxy.Changed:Connect(function(x) animScale = x applyScale() end)
-		Tween(proxy, { Value = 1 }, 0.22)
-		task.delay(0.3, function() proxy:Destroy() end)
+		hookCamera()
+		animateScale(0.97, 1, 0.22)
 	end)
 
 	return W
