@@ -1,7 +1,7 @@
 -- Lumen UI example. Shows every element.
--- Executor:   local Lumen = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_NAME/Lumen/main/Lumen.lua"))()
+-- Executor:   local Lumen = loadstring(game:HttpGet("https://raw.githubusercontent.com/xxgoldenwarriors-sketch/luemenui/main/Lumen.lua"))()
 -- Studio:     local Lumen = require(path.to.Lumen)
-local Lumen = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_NAME/Lumen/main/Lumen.lua"))()
+local Lumen = loadstring(game:HttpGet("https://raw.githubusercontent.com/xxgoldenwarriors-sketch/lumenui/main/Lumen.lua"))()
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
